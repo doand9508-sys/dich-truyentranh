@@ -15,6 +15,8 @@ from config import (
     ANTHROPIC_MODEL,
     OPENAI_API_KEY,
     OPENAI_MODEL,
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
 )
 from schemas import BoundingBox, TranslatedBox
 
@@ -109,6 +111,41 @@ def _translate_with_openai(boxes: List[BoundingBox]) -> List[TranslatedBox]:
     ]
 
 
+def _translate_with_gemini(boxes: List[BoundingBox]) -> List[TranslatedBox]:
+    """
+    Calls Google's Gemini API directly over REST (avoids pulling in the
+    google-genai SDK, which drags in extra dependencies). Uses Flash, which
+    has a free tier — good fit for a hobby project.
+    """
+    import requests
+
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    )
+    body = {
+        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": [
+            {"role": "user", "parts": [{"text": _build_user_prompt(boxes)}]}
+        ],
+        "generationConfig": {"response_mime_type": "application/json"},
+    }
+
+    resp = requests.post(url, json=body, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
+
+    raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+    parsed = _extract_json_array(raw_text)
+    # Gemini may wrap the array in {"translations": [...]} despite the
+    # system prompt — handle both shapes defensively.
+    items = parsed["translations"] if isinstance(parsed, dict) else parsed
+    return [
+        TranslatedBox(id=item["id"], translated_text=item["translated_text"])
+        for item in items
+    ]
+
+
 def translate_boxes(boxes: List[BoundingBox]) -> List[TranslatedBox]:
     """Public entrypoint used by main.py. Dispatches on LLM_PROVIDER."""
     if not boxes:
@@ -116,4 +153,6 @@ def translate_boxes(boxes: List[BoundingBox]) -> List[TranslatedBox]:
 
     if LLM_PROVIDER == "openai":
         return _translate_with_openai(boxes)
+    if LLM_PROVIDER == "gemini":
+        return _translate_with_gemini(boxes)
     return _translate_with_anthropic(boxes)
