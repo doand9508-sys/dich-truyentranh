@@ -121,8 +121,12 @@ def _translate_with_gemini(boxes: List[BoundingBox]) -> List[TranslatedBox]:
 
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+        f"{GEMINI_MODEL}:generateContent"
     )
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+    }
     body = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": [
@@ -131,7 +135,7 @@ def _translate_with_gemini(boxes: List[BoundingBox]) -> List[TranslatedBox]:
         "generationConfig": {"response_mime_type": "application/json"},
     }
 
-    resp = requests.post(url, json=body, timeout=60)
+    resp = requests.post(url, headers=headers, json=body, timeout=60)
     resp.raise_for_status()
     data = resp.json()
 
